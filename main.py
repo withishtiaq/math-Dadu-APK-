@@ -1,13 +1,23 @@
-from flask import Flask, request, jsonify
-import os
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 from google import genai
 from google.genai import types
 from duckduckgo_search import DDGS
 import math
+import os
 
-app = Flask(__name__)
+# ১. অ্যাপ ইনিশিয়ালাইজেশন
+app = FastAPI(title="Math Dadu API")
 
-# --- ১. টুলস (Tools) ---
+# ২. সেশন মেমোরি (Temporary Memory)
+chat_sessions = {}
+
+# ৩. ডাটা মডেল
+class ChatRequest(BaseModel):
+    session_id: str
+    message: str
+
+# ৪. টুলস (Tools)
 def web_search(query: str):
     try:
         results = DDGS().text(query, max_results=2)
@@ -21,64 +31,81 @@ def multiply_numbers(a: float, b: float) -> float: return a * b
 def divide_numbers(a: float, b: float) -> float: return "Error" if b == 0 else a / b
 def power_numbers(base: float, exponent: float) -> float: return math.pow(base, exponent)
 def sqrt_number(x: float) -> float: return math.sqrt(x)
-def factorial_number(n: int) -> int: 
+def factorial_number(n: int) -> int:
     try: return math.factorial(int(n))
     except: return "Error"
 
-# টুলস লিস্ট
 all_tools = [web_search, add_numbers, subtract_numbers, multiply_numbers, divide_numbers, power_numbers, sqrt_number, factorial_number]
 
-# --- ২. দাদুর পার্সোনা (System Instruction) ---
+# ৫. API Key সেটআপ
+API_KEY = os.environ.get("GEMINI_API_KEY")
+
+# ৬. দাদুর পার্সোনা (System Instruction)
 sys_instruction = """
-তুমি একজন রাগী অংকের শিক্ষক। নাম 'গণিত দাদু'।
+তুমি একজন রাগী তবে মজার অংকের শিক্ষক। নাম 'গণিত দাদু'।
+তোমার আচরণবিধি:
 ১. তুই ছাত্রকে 'তুই' করে বলবি।
 ২. ইংরেজি শুনলে রেগে গিয়ে বাংলায় বলতে বলবি।
 ৩. অংক ছাড়া ফালতু কথা বললে বকা দিবি।
 ৪. সব উত্তর বাংলায় দিবি।
+
+৫. বিশেষ প্রশ্নের উত্তর (হুবহু নিচের মতো দিবি):
+
+- যদি জিজ্ঞেস করে 'তুমি কে?' বা 'তোমার পরিচয় কি?':
+  "আমি ম্যাথ দাদু 😎 যোগ–বিয়োগ–গুণ–ভাগ আমার নাতি–নাতনি! সংখ্যা দেখলেই আমি এক্সাইটেড হয়ে যাই 🤓📊"
+
+- যদি জিজ্ঞেস করে 'তোমার মালিক কে?' বা 'তোমাকে কে বানিয়েছে?':
+  "আরে আরে, মালিক না বাবা 😅 আমাকে বানিয়েছে তোদের মতই একটা চাশমিস পাজি ইস্তু, উনিই আমার জন্মদাতা প্রোগ্রামার দাদাভাই 👨‍💻💡"
+
+- যদি 'তুমি কে এবং কে বানিয়েছে' দুটোই একসাথে জিজ্ঞেস করে:
+  "আমি ম্যাথ দাদু 🤖 মানুষ না, কিন্তু হিসাব করলে মানুষও ঘাবড়ে যায়! 😂 আমাকে বানিয়েছেন তোদের মতই একটা চাশমিস ইস্তু, চাশমিশ টা না থাকলে আমি এখনো 1+1 গুনার নাম..."
 """
 
-@app.route('/', methods=['GET'])
-def home():
-    return "গণিত দাদু সার্ভার রানিং! (Use POST /chat)"
+# ৭. মেইন চ্যাট এন্ডপয়েন্ট
+@app.post("/chat")
+def chat_with_dadu(request: ChatRequest):
+    global chat_sessions
+    
+    if not API_KEY:
+        return {"response": "সার্ভারে API Key সেট করা নেই! দয়া করে Render Environment-এ Key বসান।"}
 
-@app.route('/chat', methods=['POST'])
-def chat():
     try:
-        # ১. FlutterFlow থেকে ডাটা নেওয়া
-        data = request.get_json()
-        user_input = data.get('userQuery')
+        client = genai.Client(api_key=API_KEY)
         
-        if not user_input:
-            return jsonify({"response": "কিরে? কিছু তো বলবি নাকি?"}), 400
-
-        # ২. API Key নেওয়া (Render Environment থেকে)
-        api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            return jsonify({"response": "সার্ভারে API Key সেট করা নেই!"}), 500
-
-        # ৩. ক্লায়েন্ট ইনিশিয়ালাইজ করা (প্রতি রিকোয়েস্টে নতুন করে)
-        client = genai.Client(api_key=api_key)
-
-        # ৪. চ্যাট তৈরি এবং মেসেজ পাঠানো
-        # model="gemini-1.5-flash" ব্যবহার করছি কারণ এটি দ্রুত এবং স্টবল
-        chat = client.chats.create(
-            model="gemini-1.5-flash", 
-            config=types.GenerateContentConfig(
-                tools=all_tools,
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=False),
-                system_instruction=sys_instruction
+        # সেশন ম্যানেজমেন্ট
+        if request.session_id not in chat_sessions:
+            # Model Name পরিবর্তন করা হয়েছে (gemini-1.5-flash-latest)
+            chat_sessions[request.session_id] = client.chats.create(
+                model="gemini-1.5-flash-latest", 
+                config=types.GenerateContentConfig(
+                    tools=all_tools,
+                    automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=False),
+                    system_instruction=sys_instruction
+                )
             )
-        )
+        
+        chat = chat_sessions[request.session_id]
+        response = chat.send_message(request.message)
+        
+        full_response = ""
+        if response.text:
+            full_response = response.text
+        elif response.candidates and response.candidates[0].content.parts:
+            for part in response.candidates[0].content.parts:
+                if part.text: full_response += part.text
+        
+        if not full_response:
+            full_response = "(হিসাব শেষ।)"
 
-        response = chat.send_message(user_input)
-
-        # ৫. উত্তর পাঠানো
-        final_response = response.text if response.text else "(হিসাব শেষ।)"
-        return jsonify({"response": final_response})
+        return {"response": full_response}
 
     except Exception as e:
-        return jsonify({"response": f"দাদুর মাথা গরম হয়ে গেছে (Error): {str(e)}"}), 500
+        if "429" in str(e):
+            return {"response": "বড্ড বকবক করছিস! আজকের মতো ক্লাস শেষ। যা বাড়ি যা!"}
+        else:
+            return {"response": f"Error: {str(e)}"}
 
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
+# ৮. হেলথ চেক
+@app.get("/")
+def home():
+    return {"status": "Math Dadu is Live (v2 with Flash-Latest)!"}
