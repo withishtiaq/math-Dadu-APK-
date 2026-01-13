@@ -73,9 +73,9 @@ def chat_with_dadu(request: ChatRequest):
         
         # সেশন ম্যানেজমেন্ট
         if request.session_id not in chat_sessions:
-            # ✅ CORRECTED MODEL NAME: gemini-1.5-flash-001
+            # ✅ CORRECTED MODEL NAME: JUST 'gemini-1.5-flash'
             chat_sessions[request.session_id] = client.chats.create(
-                model="gemini-1.5-flash-001",
+                model="gemini-1.5-flash",
                 config=types.GenerateContentConfig(
                     tools=all_tools,
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=False),
@@ -107,4 +107,4 @@ def chat_with_dadu(request: ChatRequest):
 # ৮. হেলথ চেক
 @app.get("/")
 def home():
-    return {"status": "Math Dadu is Live (Fixed Model 001)"}
+    return {"status": "Math Dadu is Live (Standard Flash Model)"}
