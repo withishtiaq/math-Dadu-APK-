@@ -31,21 +31,24 @@ def chat_with_dadu(request: ChatRequest):
         return {"response": "API Key Missing on Server!"}
 
     try:
-        # ✅ SOLUTION: আপনার লিস্ট থেকে 'gemini-2.0-flash' ব্যবহার করা হলো
+        # ✅ SOLUTION: 'gemini-flash-latest' ব্যবহার করা হলো (এটি আপনার লিস্টে আছে এবং ফ্রি)
         model = genai.GenerativeModel(
-            model_name="gemini-2.0-flash",
+            model_name="gemini-flash-latest",
             system_instruction=sys_instruction
         )
         
-        # চ্যাট শুরু (হিস্ট্রি ছাড়া, প্রতিবার নতুন করে)
+        # চ্যাট শুরু
         chat = model.start_chat(history=[])
         response = chat.send_message(request.message)
         
         return {"response": response.text}
 
     except Exception as e:
+        # যদি কোনো কারণে লিমিট শেষ হয়, সুন্দর মেসেজ দেওয়া
+        if "429" in str(e):
+             return {"response": "বড্ড বকবক করছিস! আমার মাথা গরম হয়ে গেছে (Quota Exceeded)। ১ মিনিট পর আবার আসিস!"}
         return {"response": f"Error: {str(e)}"}
 
 @app.get("/")
 def home():
-    return {"status": "Math Dadu Live (Gemini 2.0 Flash)"}
+    return {"status": "Math Dadu Live (Flash Latest Version)"}
