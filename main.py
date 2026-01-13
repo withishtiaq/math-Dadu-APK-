@@ -1,29 +1,28 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-import requests
+import google.generativeai as genai
+from duckduckgo_search import DDGS
 import os
-import json
 
 app = FastAPI(title="Math Dadu API")
 
+# ডাটা মডেল
 class ChatRequest(BaseModel):
     session_id: str
     message: str
 
+# API Key সেটআপ
 API_KEY = os.environ.get("GEMINI_API_KEY")
+if API_KEY:
+    genai.configure(api_key=API_KEY)
 
-# দাদুর পার্সোনা (System Instruction)
-# Gemini Pro তে System Instruction আলাদাভাবে সাপোর্ট করে না, তাই আমরা প্রম্পটের সাথে মিশিয়ে দেব।
-DADU_PERSONA = """
+# দাদুর পার্সোনা
+sys_instruction = """
 তুমি একজন রাগী তবে মজার অংকের শিক্ষক। নাম 'গণিত দাদু'।
-১. তুই ছাত্রকে 'তুই' করে বলবি।
-২. ইংরেজি শুনলে রেগে গিয়ে বাংলায় বলতে বলবি।
-৩. অংক ছাড়া ফালতু কথা বললে বকা দিবি।
-৪. সব উত্তর বাংলায় দিবি।
-৫. যদি জিজ্ঞেস করে 'তুমি কে?': বলবি "আমি ম্যাথ দাদু 😎 যোগ–বিয়োগ–গুণ–ভাগ আমার নাতি–নাতনি! 🤓📊"
-৬. যদি জিজ্ঞেস করে 'তোমার মালিক কে?': বলবি "আমাকে বানিয়েছে তোদের মতই একটা চাশমিস পাজি ইস্তু, উনিই আমার জন্মদাতা প্রোগ্রামার দাদাভাই 👨‍💻💡"
-
-ছাত্রের প্রশ্ন: 
+১. তুই ছাত্রকে 'তুই' করে বলবি। ২. ইংরেজি শুনলে রেগে বাংলায় বলতে বলবি।
+৩. অংক ছাড়া ফালতু কথা বললে বকা দিবি। ৪. সব উত্তর বাংলায় দিবি।
+৫. 'তুমি কে?': "আমি ম্যাথ দাদু 😎 যোগ–বিয়োগ–গুণ–ভাগ আমার নাতি–নাতনি!"
+৬. 'মালিক কে?': "আমাকে বানিয়েছে তোদের মতই একটা চাশমিস পাজি ইস্তু, উনিই আমার প্রোগ্রামার দাদাভাই 👨‍💻"
 """
 
 @app.post("/chat")
@@ -31,39 +30,40 @@ def chat_with_dadu(request: ChatRequest):
     if not API_KEY:
         return {"response": "API Key Missing on Server!"}
 
-    # URL পরিবর্তন করে 'gemini-pro' দেওয়া হয়েছে (এটি ১০০% কাজ করবে)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={API_KEY}"
-    
-    # প্রম্পট তৈরি (পার্সোনা + প্রশ্ন)
-    final_prompt = DADU_PERSONA + request.message
-
-    # রিকোয়েস্ট বডি
-    payload = {
-        "contents": [{
-            "parts": [{"text": final_prompt}]
-        }]
-    }
-    
-    headers = {'Content-Type': 'application/json'}
-
     try:
-        response = requests.post(url, headers=headers, data=json.dumps(payload))
+        # ১. প্রথমে আমরা 'gemini-1.5-flash' দিয়ে চেষ্টা করব (সবচেয়ে ফাস্ট)
+        model = genai.GenerativeModel(
+            model_name="gemini-1.5-flash",
+            system_instruction=sys_instruction
+        )
         
-        if response.status_code == 200:
-            result = response.json()
-            try:
-                text_response = result['candidates'][0]['content']['parts'][0]['text']
-                return {"response": text_response}
-            except (KeyError, IndexError):
-                return {"response": "(দাদু কিছু বলতে গিয়েও চুপ করে গেলেন...)"}
-        else:
-            # এরর ডিবাগিং
-            error_msg = response.json().get('error', {}).get('message', 'Unknown Error')
-            return {"response": f"Server Error: {error_msg}"}
+        # চ্যাট শুরু
+        chat = model.start_chat(history=[])
+        response = chat.send_message(request.message)
+        
+        return {"response": response.text}
 
     except Exception as e:
-        return {"response": f"Connection Failed: {str(e)}"}
+        # ⚠️ যদি এরর হয়, আমরা চেক করব কেন হলো
+        error_msg = str(e)
+        
+        if "404" in error_msg or "not found" in error_msg.lower():
+            # 🚑 DIAGNOSTIC MODE: সার্ভারে কী কী মডেল আছে তা খুঁজে বের করা
+            try:
+                available_models = []
+                for m in genai.list_models():
+                    if 'generateContent' in m.supported_generation_methods:
+                        available_models.append(m.name)
+                
+                # ইউজারকে মডেলের লিস্ট পাঠানো
+                return {
+                    "response": f"দাদুর ব্রেন কানেকশনে সমস্যা হচ্ছে। সার্ভারে এভেলেবল মডেলগুলো হলো: {available_models}। দয়া করে ডেভেলপারকে এই লিস্টটি দেখান।"
+                }
+            except Exception as list_error:
+                 return {"response": f"Model Error: {error_msg}. (List Error: {list_error})"}
+        
+        return {"response": f"Server Error: {error_msg}"}
 
 @app.get("/")
 def home():
-    return {"status": "Math Dadu is Live (Gemini Pro Version)"}
+    return {"status": "Math Dadu Diagnostic Mode Running"}
