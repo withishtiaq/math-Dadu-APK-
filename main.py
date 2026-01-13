@@ -1,7 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from google import genai
-from google.genai import types
+import google.generativeai as genai
 from duckduckgo_search import DDGS
 import math
 import os
@@ -19,6 +18,7 @@ class ChatRequest(BaseModel):
 
 # ৪. টুলস (Tools)
 def web_search(query: str):
+    """Interne search tool."""
     try:
         results = DDGS().text(query, max_results=2)
         return str(results) if results else "No results found."
@@ -35,10 +35,13 @@ def factorial_number(n: int) -> int:
     try: return math.factorial(int(n))
     except: return "Error"
 
-all_tools = [web_search, add_numbers, subtract_numbers, multiply_numbers, divide_numbers, power_numbers, sqrt_number, factorial_number]
+# টুলস লিস্ট (ফাংশনগুলো সরাসরি লিস্টে রাখা যাবে)
+tools_list = [web_search, add_numbers, subtract_numbers, multiply_numbers, divide_numbers, power_numbers, sqrt_number, factorial_number]
 
 # ৫. API Key সেটআপ
 API_KEY = os.environ.get("GEMINI_API_KEY")
+if API_KEY:
+    genai.configure(api_key=API_KEY)
 
 # ৬. দাদুর পার্সোনা (System Instruction)
 sys_instruction = """
@@ -69,30 +72,29 @@ def chat_with_dadu(request: ChatRequest):
         return {"response": "সার্ভারে API Key সেট করা নেই! দয়া করে Render Environment-এ Key বসান।"}
 
     try:
-        client = genai.Client(api_key=API_KEY)
-        
-        # সেশন ম্যানেজমেন্ট
+        # সেশন ম্যানেজমেন্ট (Google Generative AI লাইব্রেরি স্টাইলে)
         if request.session_id not in chat_sessions:
-            # ✅ CORRECTED MODEL NAME: JUST 'gemini-1.5-flash'
-            chat_sessions[request.session_id] = client.chats.create(
-                model="gemini-1.5-flash",
-                config=types.GenerateContentConfig(
-                    tools=all_tools,
-                    automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=False),
-                    system_instruction=sys_instruction
-                )
+            model = genai.GenerativeModel(
+                model_name="gemini-1.5-flash", # এই লাইব্রেরিতে এই নাম ১০০% কাজ করে
+                tools=tools_list,
+                system_instruction=sys_instruction
             )
+            chat_sessions[request.session_id] = model.start_chat(history=[])
         
         chat = chat_sessions[request.session_id]
+        
+        # মেসেজ পাঠানো
         response = chat.send_message(request.message)
         
+        # রেসপন্স প্রসেসিং
         full_response = ""
         if response.text:
             full_response = response.text
-        elif response.candidates and response.candidates[0].content.parts:
-            for part in response.candidates[0].content.parts:
-                if part.text: full_response += part.text
-        
+        # টুল বা পার্টস হ্যান্ডলিং (যদি টেক্সট সরাসরি না আসে)
+        elif response.parts:
+             for part in response.parts:
+                 if part.text: full_response += part.text
+
         if not full_response:
             full_response = "(হিসাব শেষ।)"
 
@@ -107,4 +109,4 @@ def chat_with_dadu(request: ChatRequest):
 # ৮. হেলথ চেক
 @app.get("/")
 def home():
-    return {"status": "Math Dadu is Live (Standard Flash Model)"}
+    return {"status": "Math Dadu is Live (Stable Library)"}
