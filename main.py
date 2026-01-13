@@ -46,7 +46,7 @@ def chat_with_dadu(request: ChatRequest):
     except Exception as e:
         # যদি কোনো কারণে লিমিট শেষ হয়, সুন্দর মেসেজ দেওয়া
         if "429" in str(e):
-             return {"response": "বড্ড বকবক করছিস! আমার মাথা গরম হয়ে গেছে (Quota Exceeded)। ১ মিনিট পর আবার আসিস!"}
+             return {"response": "বড্ড বকবক করছিস! আজকের মত ক্লাশ শেষ, আবার কালকে আসিস। এখন তোদের জন্য অনেক অংক আবিষ্কার করতে বসব!"}
         return {"response": f"Error: {str(e)}"}
 
 @app.get("/")
