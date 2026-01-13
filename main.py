@@ -9,7 +9,7 @@ import os
 # ১. অ্যাপ ইনিশিয়ালাইজেশন
 app = FastAPI(title="Math Dadu API")
 
-# ২. সেশন মেমোরি (Temporary Memory)
+# ২. সেশন মেমোরি
 chat_sessions = {}
 
 # ৩. ডাটা মডেল
@@ -50,7 +50,6 @@ sys_instruction = """
 ৪. সব উত্তর বাংলায় দিবি।
 
 ৫. বিশেষ প্রশ্নের উত্তর (হুবহু নিচের মতো দিবি):
-
 - যদি জিজ্ঞেস করে 'তুমি কে?' বা 'তোমার পরিচয় কি?':
   "আমি ম্যাথ দাদু 😎 যোগ–বিয়োগ–গুণ–ভাগ আমার নাতি–নাতনি! সংখ্যা দেখলেই আমি এক্সাইটেড হয়ে যাই 🤓📊"
 
@@ -74,9 +73,9 @@ def chat_with_dadu(request: ChatRequest):
         
         # সেশন ম্যানেজমেন্ট
         if request.session_id not in chat_sessions:
-            # Model Name পরিবর্তন করা হয়েছে (gemini-1.5-flash-latest)
+            # ✅ CORRECTED MODEL NAME: gemini-1.5-flash-001
             chat_sessions[request.session_id] = client.chats.create(
-                model="gemini-1.5-flash-latest", 
+                model="gemini-1.5-flash-001",
                 config=types.GenerateContentConfig(
                     tools=all_tools,
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=False),
@@ -108,4 +107,4 @@ def chat_with_dadu(request: ChatRequest):
 # ৮. হেলথ চেক
 @app.get("/")
 def home():
-    return {"status": "Math Dadu is Live (v2 with Flash-Latest)!"}
+    return {"status": "Math Dadu is Live (Fixed Model 001)"}
